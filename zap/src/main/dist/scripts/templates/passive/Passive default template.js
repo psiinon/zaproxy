@@ -19,14 +19,19 @@ var PluginPassiveScanner = Java.type("org.zaproxy.zap.extension.pscan.PluginPass
 function scan(ps, msg, src) {
 	// Test the request and/or response here
 	if (true) {	// Change to a test which detects the vulnerability
-		// raiseAlert(risk, int confidence, String name, String description, String uri, 
-		//		String param, String attack, String otherInfo, String solution, String evidence, 
+		// raiseAlert([pluginId,] risk, int confidence, String name, String description, String uri, 
+		//		String param, String attack, String otherInfo, String solution, 
+		//		String evidence, String reference, 
 		//		int cweId, int wascId, HttpMessage msg)
+		// pluginId is optional, by default 50001 or register in
+		// 		https://github.com/zaproxy/zaproxy/blob/develop/docs/scanners.md
 		// risk: 0: info, 1: low, 2: medium, 3: high
 		// confidence: 0: falsePositive, 1: low, 2: medium, 3: high, 4: confirmed
+		// evidence: this should be a string that appears in the request or response
+		// reference should be a url
 		ps.raiseAlert(1, 1, 'Passive Vulnerability title', 'Full description', 
 			msg.getRequestHeader().getURI().toString(), 
-			'The param', 'Your attack', 'Any other info', 'The solution', '', 'References', 0, 0, msg);
+			'The param', 'Your attack', 'Any other info', 'The solution', 'The evidence', 'References', 0, 0, msg);
 		
 		//addTag(String tag)
 		ps.addTag('tag')			
