@@ -83,6 +83,7 @@
 // ZAP: 2019/09/17 Use remove() instead of set(null) on IN_LISTENER.
 // ZAP: 2019/09/25 Add option to disable cookies
 // ZAP: 2020/04/20 Configure if the names should be resolved or not (Issue 29).
+// ZAP: 2020/07/13 Auto decode 
 package org.parosproxy.paros.network;
 
 import java.io.IOException;
@@ -119,6 +120,7 @@ import org.apache.commons.httpclient.protocol.ProtocolSocketFactory;
 import org.apache.log4j.Logger;
 import org.zaproxy.zap.ZapGetMethod;
 import org.zaproxy.zap.ZapHttpConnectionManager;
+import org.zaproxy.zap.network.HttpEncodingUtils;
 import org.zaproxy.zap.network.HttpRedirectionValidator;
 import org.zaproxy.zap.network.HttpRequestConfig;
 import org.zaproxy.zap.network.HttpSenderListener;
@@ -482,6 +484,7 @@ public class HttpSender {
                                     .equalsIgnoreCase(HttpRequestHeader.PUT))) {
                 // ZAP: Reauthentication when sending a message from the perspective of a User
                 sendAuthenticated(msg, isFollowRedirect);
+                decodeResponseIfNeeded(msg);
                 return;
             }
 
@@ -513,6 +516,7 @@ public class HttpSender {
 
             msg.setResponseHeader(temp.getResponseHeader());
             msg.setResponseBody(temp.getResponseBody());
+            decodeResponseIfNeeded(msg);
 
         } finally {
             msg.setTimeElapsedMillis((int) (System.currentTimeMillis() - msg.getTimeSentMillis()));
@@ -526,6 +530,22 @@ public class HttpSender {
 
             notifyResponseListeners(msg);
         }
+    }
+
+    private void decodeResponseIfNeeded(HttpMessage msg) {
+        if (this.initiator == PROXY_INITIATOR || initiator == MANUAL_REQUEST_INITIATOR) {
+            // Dont auto decode manual / proxied requests
+            return;
+        }
+        List<String> vals = msg.getRequestHeader().getHeaderValues(HttpHeader.ACCEPT_ENCODING);
+        if (vals != null) {
+            for (String val : vals) {
+                if (val.equalsIgnoreCase(HttpHeader.GZIP)) {
+                    return;
+                }
+            }
+        }
+        HttpEncodingUtils.decodeResponseIfNeeded(msg);
     }
 
     private void notifyRequestListeners(HttpMessage msg) {
