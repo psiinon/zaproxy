@@ -19,6 +19,7 @@
  */
 package org.zaproxy.zap.authentication;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,7 @@ import org.zaproxy.zap.model.Context;
 import org.zaproxy.zap.model.SessionStructure;
 import org.zaproxy.zap.session.SessionManagementMethod;
 import org.zaproxy.zap.session.WebSession;
+import org.zaproxy.zap.users.AuthenticationState;
 import org.zaproxy.zap.users.User;
 import org.zaproxy.zap.utils.Stats;
 
@@ -98,12 +100,6 @@ public abstract class AuthenticationMethod {
     private int pollFrequency = DEFAULT_POLL_FREQUENCY;
 
     private AuthPollFrequencyUnits pollFrequencyUnits = AuthPollFrequencyUnits.REQUESTS;
-
-    private long lastPollTime;
-
-    private Boolean lastPollResult;
-
-    private int requestsSincePoll = 0;
 
     /**
      * Checks if the authentication method is fully configured.
@@ -267,9 +263,10 @@ public abstract class AuthenticationMethod {
      */
     public boolean isAuthenticated(HttpMessage msg, User user, boolean force) {
 
-        if (msg == null) {
+        if (msg == null || user == null) {
             return false;
         }
+        AuthenticationState authState = user.getAuthenticationState();
         // Assume logged in if nothing was set up
         if (loggedInIndicatorPattern == null && loggedOutIndicatorPattern == null) {
             try {
@@ -290,9 +287,72 @@ public abstract class AuthenticationMethod {
             return true;
         }
 
-        List<String> contentToTest = new ArrayList<>();
+        HttpMessage msgToTest;
 
         switch (this.authCheckingStrategy) {
+            case EACH_REQ:
+                msgToTest = msg;
+                break;
+            case EACH_REQ_RESP:
+                msgToTest = msg;
+                break;
+            case EACH_RESP:
+                msgToTest = msg;
+                break;
+            case POLL_URL:
+                if (!force
+                        && authState.getLastPollResult() != null
+                        && authState.getLastPollResult()) {
+                    // Check if we really need to poll the relevant URL again
+                    switch (pollFrequencyUnits) {
+                        case SECONDS:
+                            if ((System.currentTimeMillis() - authState.getLastPollTime()) / 1000
+                                    < pollFrequency) {
+                                try {
+                                    Stats.incCounter(
+                                            SessionStructure.getHostName(msg),
+                                            AUTH_STATE_ASSUMED_IN_STATS);
+                                } catch (URIException e) {
+                                    // Ignore
+                                }
+                                return true;
+                            }
+                            break;
+                        case REQUESTS:
+                        default:
+                            if (authState.getRequestsSincePoll() < pollFrequency) {
+                                authState.incRequestsSincePoll();
+                                try {
+                                    Stats.incCounter(
+                                            SessionStructure.getHostName(msg),
+                                            AUTH_STATE_ASSUMED_IN_STATS);
+                                } catch (URIException e) {
+                                    // Ignore
+                                }
+                                return true;
+                            }
+                            break;
+                    }
+                }
+                // Make the poll request
+                try {
+                    HttpMessage pollMsg = pollAsUser(user);
+                    msgToTest = pollMsg;
+                } catch (Exception e1) {
+                    LOGGER.warn("Failed sending poll request to " + this.getPollUrl(), e1);
+                    return false;
+                }
+                break;
+            default:
+                return false;
+        }
+
+        return evaluateAuthRequest(msgToTest, authState);
+    }
+
+    public boolean evaluateAuthRequest(HttpMessage msg, AuthenticationState authState) {
+        List<String> contentToTest = new ArrayList<>();
+        switch (authCheckingStrategy) {
             case EACH_REQ:
                 contentToTest.add(msg.getRequestHeader().toString());
                 contentToTest.add(msg.getRequestBody().toString());
@@ -308,83 +368,9 @@ public abstract class AuthenticationMethod {
                 contentToTest.add(msg.getResponseBody().toString());
                 break;
             case POLL_URL:
-                if (!force && lastPollResult != null && lastPollResult) {
-                    // Check if we really need to poll the relevant URL again
-                    switch (pollFrequencyUnits) {
-                        case SECONDS:
-                            if ((System.currentTimeMillis() - lastPollTime) / 1000
-                                    < pollFrequency) {
-                                try {
-                                    Stats.incCounter(
-                                            SessionStructure.getHostName(msg),
-                                            AUTH_STATE_ASSUMED_IN_STATS);
-                                } catch (URIException e) {
-                                    // Ignore
-                                }
-                                return true;
-                            }
-                            break;
-                        case REQUESTS:
-                        default:
-                            if (requestsSincePoll < pollFrequency) {
-                                requestsSincePoll++;
-                                try {
-                                    Stats.incCounter(
-                                            SessionStructure.getHostName(msg),
-                                            AUTH_STATE_ASSUMED_IN_STATS);
-                                } catch (URIException e) {
-                                    // Ignore
-                                }
-                                return true;
-                            }
-                            break;
-                    }
-                }
-                // Make the poll request
-                try {
-                    HttpMessage pollMsg = new HttpMessage(new URI(this.getPollUrl(), true));
-                    if (this.getPollData() != null && this.getPollData().length() > 0) {
-                        pollMsg.getRequestHeader().setMethod(HttpRequestHeader.POST);
-                        pollMsg.getRequestBody().setBody(this.getPollData());
-                        pollMsg.getRequestHeader()
-                                .setContentLength(pollMsg.getRequestBody().length());
-                    }
-                    if (this.getPollHeaders() != null && this.getPollHeaders().length() > 0) {
-                        for (String header : this.getPollHeaders().split("\n")) {
-                            String[] headerValue = header.split(":");
-                            if (headerValue.length == 2) {
-                                pollMsg.getRequestHeader()
-                                        .addHeader(headerValue[0].trim(), headerValue[1].trim());
-                            } else {
-                                LOGGER.error(
-                                        "Invalid header '"
-                                                + header
-                                                + "' for poll request to "
-                                                + this.getPollUrl());
-                            }
-                        }
-                    }
-                    pollMsg.setRequestingUser(user);
-                    if (user != null) {
-                        replaceUserDataInPollRequest(pollMsg, user);
-                    }
-
-                    getHttpSender().sendAndReceive(pollMsg);
-                    AuthenticationHelper.addAuthMessageToHistory(pollMsg);
-                    contentToTest.add(pollMsg.getResponseHeader().toString());
-                    contentToTest.add(pollMsg.getResponseBody().toString());
-                    lastPollTime = System.currentTimeMillis();
-                    requestsSincePoll = 0;
-
-                } catch (Exception e1) {
-                    LOGGER.warn("Failed sending poll request to " + this.getPollUrl(), e1);
-                    return false;
-                }
-                break;
-            default:
-                return false;
+                contentToTest.add(msg.getResponseHeader().toString());
+                contentToTest.add(msg.getResponseBody().toString());
         }
-
         if (patternMatchesAny(loggedInIndicatorPattern, contentToTest)) {
             // Looks like we're authenticated
             try {
@@ -392,8 +378,8 @@ public abstract class AuthenticationMethod {
             } catch (URIException e) {
                 // Ignore
             }
-            if (this.authCheckingStrategy.equals(AuthCheckingStrategy.POLL_URL)) {
-                this.lastPollResult = true;
+            if (authCheckingStrategy.equals(AuthCheckingStrategy.POLL_URL)) {
+                authState.setLastPollResult(true);
             }
             return true;
         }
@@ -408,7 +394,7 @@ public abstract class AuthenticationMethod {
                 // Ignore
             }
             if (this.authCheckingStrategy.equals(AuthCheckingStrategy.POLL_URL)) {
-                this.lastPollResult = true;
+                authState.setLastPollResult(true);
             }
             return true;
         }
@@ -419,9 +405,47 @@ public abstract class AuthenticationMethod {
             // Ignore
         }
         if (this.authCheckingStrategy.equals(AuthCheckingStrategy.POLL_URL)) {
-            this.lastPollResult = false;
+            authState.setLastPollResult(false);
         }
         return false;
+    }
+
+    public HttpMessage pollAsUser(User user) throws IOException {
+        if (!this.authCheckingStrategy.equals(AuthCheckingStrategy.POLL_URL)) {
+            throw new IllegalArgumentException("Authentication checking strategy is not POLL_URL");
+        }
+        HttpMessage pollMsg = new HttpMessage(new URI(this.getPollUrl(), true));
+        if (this.getPollData() != null && this.getPollData().length() > 0) {
+            pollMsg.getRequestHeader().setMethod(HttpRequestHeader.POST);
+            pollMsg.getRequestBody().setBody(this.getPollData());
+            pollMsg.getRequestHeader().setContentLength(pollMsg.getRequestBody().length());
+        }
+        if (this.getPollHeaders() != null && this.getPollHeaders().length() > 0) {
+            for (String header : this.getPollHeaders().split("\n")) {
+                String[] headerValue = header.split(":");
+                if (headerValue.length == 2) {
+                    pollMsg.getRequestHeader()
+                            .addHeader(headerValue[0].trim(), headerValue[1].trim());
+                } else {
+                    LOGGER.error(
+                            "Invalid header '"
+                                    + header
+                                    + "' for poll request to "
+                                    + this.getPollUrl());
+                }
+            }
+        }
+        pollMsg.setRequestingUser(user);
+        replaceUserDataInPollRequest(pollMsg, user);
+
+        getHttpSender().sendAndReceive(pollMsg);
+        AuthenticationHelper.addAuthMessageToHistory(pollMsg);
+
+        AuthenticationState authState = user.getAuthenticationState();
+        authState.setLastPollTime(System.currentTimeMillis());
+        authState.setRequestsSincePoll(0);
+
+        return pollMsg;
     }
 
     private static boolean patternMatchesAny(Pattern pattern, List<String> content) {
@@ -526,34 +550,6 @@ public abstract class AuthenticationMethod {
 
     public void setPollFrequencyUnits(AuthPollFrequencyUnits pollFrequencyUnits) {
         this.pollFrequencyUnits = pollFrequencyUnits;
-    }
-
-    /**
-     * Gets the last poll result - true means that the user is authenticated, false is
-     * unauthenticated and null if no poll request has been made.
-     *
-     * @return the last poll result
-     */
-    public Boolean getLastPollResult() {
-        return lastPollResult;
-    }
-
-    /**
-     * Sets the last poll result - this can be used by script or add-ons to change the known logged
-     * in state e.g. if they have more accurate information
-     *
-     * @param lastPollResult
-     */
-    public void setLastPollResult(Boolean lastPollResult) {
-        this.lastPollResult = lastPollResult;
-    }
-
-    public long getLastPollTime() {
-        return lastPollTime;
-    }
-
-    public int getRequestsSincePoll() {
-        return requestsSincePoll;
     }
 
     /**

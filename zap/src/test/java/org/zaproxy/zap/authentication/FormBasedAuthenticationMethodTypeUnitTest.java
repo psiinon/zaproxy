@@ -50,6 +50,7 @@ import org.zaproxy.zap.session.SessionManagementMethod;
 import org.zaproxy.zap.session.WebSession;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.TestUtils;
+import org.zaproxy.zap.users.AuthenticationState;
 import org.zaproxy.zap.users.User;
 
 public class FormBasedAuthenticationMethodTypeUnitTest extends TestUtils {
@@ -132,6 +133,7 @@ public class FormBasedAuthenticationMethodTypeUnitTest extends TestUtils {
         method.setPollData(pollData);
 
         User user = mock(User.class);
+        given(user.getAuthenticationState()).willReturn(new AuthenticationState());
         given(user.getAuthenticationCredentials())
                 .willReturn(new UsernamePasswordAuthenticationCredentials(username, ""));
         given(user.getContext()).willReturn(mockedContext);
@@ -175,6 +177,7 @@ public class FormBasedAuthenticationMethodTypeUnitTest extends TestUtils {
         method.setPollData(pollData);
 
         User user = mock(User.class);
+        given(user.getAuthenticationState()).willReturn(new AuthenticationState());
         given(user.getAuthenticationCredentials())
                 .willReturn(new UsernamePasswordAuthenticationCredentials("", password));
         given(user.getContext()).willReturn(mockedContext);
@@ -215,6 +218,7 @@ public class FormBasedAuthenticationMethodTypeUnitTest extends TestUtils {
         method.setPollData(pollData);
 
         User user = mock(User.class);
+        given(user.getAuthenticationState()).willReturn(new AuthenticationState());
         given(user.getAuthenticationCredentials())
                 .willReturn(new UsernamePasswordAuthenticationCredentials(username, ""));
         given(user.getContext()).willReturn(mockedContext);

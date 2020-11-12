@@ -254,6 +254,8 @@ public class ScriptBasedAuthenticationMethodType extends AuthenticationMethodTyp
                 throws UnsupportedAuthenticationCredentialsException {
             // type check
             if (!(credentials instanceof GenericAuthenticationCredentials)) {
+                user.getAuthenticationState()
+                        .setLastAuthFailure("Credentials not GenericAuthenticationCredentials");
                 throw new UnsupportedAuthenticationCredentialsException(
                         "Script based Authentication method only supports "
                                 + GenericAuthenticationCredentials.class.getSimpleName()
@@ -291,6 +293,9 @@ public class ScriptBasedAuthenticationMethodType extends AuthenticationMethodTyp
                 // implementations
                 // might throw other exceptions on script errors (e.g.
                 // jdk.nashorn.internal.runtime.ECMAException)
+                user.getAuthenticationState()
+                        .setLastAuthFailure(
+                                "Error running authentication script " + e.getMessage());
                 log.error(
                         "An error occurred while trying to authenticate using the Authentication Script: "
                                 + this.script.getName(),
@@ -304,6 +309,7 @@ public class ScriptBasedAuthenticationMethodType extends AuthenticationMethodTyp
                         String.format(
                                 "Auth request returned by the script '%s' does not have the request-target.",
                                 this.script.getName());
+                user.getAuthenticationState().setLastAuthFailure(error);
                 log.error(error);
                 error = "ERROR: " + error + "\n";
                 getScriptsExtension().handleScriptError(this.script, error);
@@ -315,14 +321,19 @@ public class ScriptBasedAuthenticationMethodType extends AuthenticationMethodTyp
 
             if (this.isAuthenticated(msg, user, true)) {
                 // Let the user know it worked
+                user.getAuthenticationState().setLastAuthFailure("");
                 AuthenticationHelper.notifyOutputAuthSuccessful(msg);
             } else {
                 // Let the user know it failed
+                user.getAuthenticationState().setLastAuthFailure("User is not authenticated");
                 AuthenticationHelper.notifyOutputAuthFailure(msg);
             }
 
             // Add message to history
             AuthenticationHelper.addAuthMessageToHistory(msg);
+
+            user.getAuthenticationState()
+                    .setLastAuthRequestHistoryId(msg.getHistoryRef().getHistoryId());
 
             // Return the web session as extracted by the session management method
             return sessionManagementMethod.extractWebSession(msg);

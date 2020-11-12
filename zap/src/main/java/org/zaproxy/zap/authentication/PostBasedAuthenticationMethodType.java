@@ -305,6 +305,9 @@ public abstract class PostBasedAuthenticationMethodType extends AuthenticationMe
 
             // type check
             if (!(credentials instanceof UsernamePasswordAuthenticationCredentials)) {
+                user.getAuthenticationState()
+                        .setLastAuthFailure(
+                                "Credentials not UsernamePasswordAuthenticationCredentials");
                 throw new UnsupportedAuthenticationCredentialsException(
                         "Post based authentication method only supports "
                                 + UsernamePasswordAuthenticationCredentials.class.getSimpleName()
@@ -316,6 +319,9 @@ public abstract class PostBasedAuthenticationMethodType extends AuthenticationMe
 
             if (!cred.isConfigured()) {
                 LOGGER.warn("No credentials to authenticate user: " + user.getName());
+                user.getAuthenticationState()
+                        .setLastAuthFailure(
+                                "No credentials to authenticate user: " + user.getName());
                 return null;
             }
 
@@ -340,6 +346,9 @@ public abstract class PostBasedAuthenticationMethodType extends AuthenticationMe
                 replaceAntiCsrfTokenValueIfRequired(msg, loginMsgToRenewCookie, paramEncoder);
             } catch (Exception e) {
                 LOGGER.error("Unable to prepare authentication message: " + e.getMessage(), e);
+                user.getAuthenticationState()
+                        .setLastAuthFailure(
+                                "Unable to prepare authentication message: " + e.getMessage());
                 return null;
             }
             // Clear any session identifiers
@@ -356,10 +365,16 @@ public abstract class PostBasedAuthenticationMethodType extends AuthenticationMe
                 getHttpSender().sendAndReceive(msg);
             } catch (IOException e) {
                 LOGGER.error("Unable to send authentication message: " + e.getMessage());
+                user.getAuthenticationState()
+                        .setLastAuthFailure(
+                                "Unable to send authentication message: " + e.getMessage());
                 return null;
             }
             // Add message to history
             AuthenticationHelper.addAuthMessageToHistory(msg);
+
+            user.getAuthenticationState()
+                    .setLastAuthRequestHistoryId(msg.getHistoryRef().getHistoryId());
 
             // Update the session as it may have changed
             WebSession session = sessionManagementMethod.extractWebSession(msg);
@@ -368,6 +383,7 @@ public abstract class PostBasedAuthenticationMethodType extends AuthenticationMe
             if (this.isAuthenticated(msg, user, true)) {
                 // Let the user know it worked
                 AuthenticationHelper.notifyOutputAuthSuccessful(msg);
+                user.getAuthenticationState().setLastAuthFailure("");
             } else {
                 // Let the user know it failed
                 AuthenticationHelper.notifyOutputAuthFailure(msg);
