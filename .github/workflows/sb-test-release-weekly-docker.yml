@@ -1,0 +1,25 @@
+name: Release Weekly Docker SB Test
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: 'release-weekly-docker'
+
+jobs:
+  publish:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: echo "REL_DATE=$(date +%F)" >> $GITHUB_ENV
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v1
+        with:
+          username: psiinon
+          password: ${{ secrets.ZAPBOT_DOCKER_TOKEN }}
+          repository: psiinon/zap2docker-weekly-sb
+          path: docker
+          dockerfile: docker/Dockerfile-weekly-sb
+          tags: w${{ env.REL_DATE }},latest
+          build_args: |
+            WEBSWING_TOKEN=${{ secrets.WEBSWING_TOKEN }}
