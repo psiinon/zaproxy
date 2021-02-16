@@ -15,7 +15,5 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: 8
-    - name: Build and Release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: ./gradlew "-Dorg.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m" :zap:createWeeklyReleaseFromGitHubRef
+    - name: Build
+      run: cd snap; ./build-snap.sh
