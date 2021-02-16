@@ -1,8 +1,6 @@
 name: SBSB Test
 on:
-  push:
-    tags:
-      - 'w*'
+  workflow_dispatch:
 
 jobs:
   release:
