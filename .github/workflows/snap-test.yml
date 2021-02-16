@@ -1,8 +1,6 @@
 name: Snap Release Test
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: 'release-weekly-docker'
 
 jobs:
   publish:
