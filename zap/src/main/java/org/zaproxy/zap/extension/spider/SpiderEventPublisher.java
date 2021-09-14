@@ -37,6 +37,7 @@ public class SpiderEventPublisher extends ScanEventPublisher {
         if (publisher == null) {
             publisher = new SpiderEventPublisher();
             ZAP.getEventBus().registerPublisher(publisher, getEvents());
+            System.out.println("SBSB registered SpiderEventPublisher"); // TODO
         }
         return publisher;
     }
