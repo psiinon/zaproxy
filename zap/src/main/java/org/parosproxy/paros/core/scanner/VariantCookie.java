@@ -20,10 +20,16 @@
 package org.parosproxy.paros.core.scanner;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+
 import org.parosproxy.paros.network.HttpHeader;
 import org.parosproxy.paros.network.HttpMessage;
+
+import net.sf.json.JSONObject;
 
 /**
  * A {@code Variant} for Cookie headers, allowing to attack the names and values of the cookies.
@@ -78,12 +84,45 @@ public class VariantCookie implements Variant {
                 String name = hasNameValuePair ? nameValuePair[0] : null;
                 String value =
                         getUnescapedValue(!hasNameValuePair ? nameValuePair[0] : nameValuePair[1]);
-                extractedParameters.add(
-                        new NameValuePair(
-                                NameValuePair.TYPE_COOKIE,
-                                name,
-                                value,
-                                extractedParameters.size()));
+                String originalValue = value;
+
+				String testValue = value;
+
+                try {
+					testValue = new String(Base64.getDecoder().decode(value));
+				} catch (Exception e) {
+					// Ignore - just means its not base64 encoded
+				}
+
+                // TODO
+                try {
+					JSONObject json = JSONObject.fromObject(testValue);
+					System.out.println("SBSB got json from cookie " + name + 
+							" " + json.toString()); // TODO
+					
+					// Its JSON structured data
+					for (Object key : json.keySet()) {
+						System.out.println("SBSB adding key " + name + 
+								":" + key); // TODO
+		                extractedParameters.add(
+		                        new NameValuePair(
+		                                NameValuePair.TYPE_COOKIE,
+		                                name + ":" + key,
+		                                originalValue,
+		                                extractedParameters.size()));
+
+					}
+					
+				} catch (Exception e) {
+					System.out.println("SBSB not json in cookie " + name + " " + value); // TODO
+					// Its not structured
+	                extractedParameters.add(
+	                        new NameValuePair(
+	                                NameValuePair.TYPE_COOKIE,
+	                                name,
+	                                value,
+	                                extractedParameters.size()));
+				}
             }
         }
 
@@ -93,6 +132,7 @@ public class VariantCookie implements Variant {
             extractedParameters.trimToSize();
             params = Collections.unmodifiableList(extractedParameters);
         }
+		System.out.println("SBSB num params " + params.size()); // TODO
     }
 
     /**
@@ -144,20 +184,103 @@ public class VariantCookie implements Variant {
             String name,
             String value,
             boolean escaped) {
+		System.out.println("SBSB ------ " + name); // TODO
         String escapedValue = value == null ? null : escaped ? value : getEscapedValue(value);
         StringBuilder cookieString = new StringBuilder();
+        
+        Set<String> handledCookies = new HashSet<>();
+
+        boolean isJson = false;
+        String structName = null;
+        
+    	if (name != null && name.contains(":")) {
+    		isJson = true;
+    		structName = name.split(":")[0];
+    		System.out.println("SBSB isJson " + isJson + " " + structName); // TODO
+    	}
+        
+        
         for (int idx = 0; idx < params.size(); idx++) {
+    		System.out.println("SBSB --- " + idx + " " + params.get(idx).getName() + "=" + params.get(idx).getValue()); // TODO
+            NameValuePair param = params.get(idx);
+        	String paramStructName = null;
             String cookieName = null;
             String cookieValue = null;
+            
+            if (param.getName() != null && param.getName().contains(":")) {
+            	paramStructName = param.getName().split(":")[0];
+        		System.out.println("SBSB paramStructName = " + paramStructName); // TODO
+            	if (handledCookies.contains(paramStructName)) {
+            		// Cookies with structured data will typically appear multiple times.
+            		// We've already handled this one
+            		System.out.println("SBSB ignoring - already handled");
+            		continue;
+            	}
+            }
+            
+            
+            /*
+             * TODO - Problems
+             * 		Can have multiple params per cookie - we only want one
+             * 		If its the target then we must use the value being set
+             * 		If its not the target then it doesnt matter
+             */
             if (idx == originalPair.getPosition()) {
+            	// TODO
+            	if (isJson) {
+            		// TODO
+            		System.out.println("SBSB attacking " + name);
+                    try {
+                    	// TODO handle unencoded json
+                    	String testValue = param.getValue();
+                    	boolean b64enc = false;
+    					try {
+							testValue = new String(Base64.getDecoder().decode(testValue));
+							b64enc = true;
+						} catch (Exception e) {
+							// Ignore, just means its not base64 encoded
+						}
+                		System.out.println("SBSB orig value " + testValue);
+    					JSONObject json = JSONObject.fromObject(testValue);
+                		System.out.println("SBSB orig str " + json.toString());
+    					String [] keys = param.getName().split(":");
+    					if (keys.length == 2) {
+    						cookieName = keys[0];
+	    					String key = keys[1];
+	                		System.out.println("SBSB attacking " + cookieName + " / " + key);
+	                		json.put(key, value); // TODO wrong - not (always) escapedValue
+	                		System.out.println("SBSB json " + json.toString());
+	                		if (b64enc) {
+		                		cookieValue = Base64.getEncoder().encodeToString(json.toString().getBytes());
+	                		} else {
+		                		cookieValue = json.toString();
+	                		}
+	                		System.out.println("SBSB value " + cookieValue);
+    					} else {
+        					System.out.println("SBSB unsupported # keys " + keys.length); // TODO
+    						
+    					}
+    					
+    				} catch (Exception e) {
+    					System.out.println("SBSB not json in cookie " + param.getName() + " " + param.getValue()); // TODO
+    					e.printStackTrace(); // TODO
+    					// Ignore
+    				}
+
+            		
+            	} 
+            	else
                 if (!(name == null && escapedValue == null)) {
                     cookieName = name;
                     if (escapedValue != null) {
                         cookieValue = escapedValue;
                     }
                 }
+            } else if (isJson && structName.equals(paramStructName)) {
+            	// Same cookie name as the one we are changing, ignore
+        		System.out.println("SBSB ignoring - we're attacking this one");
+            	continue;
             } else {
-                NameValuePair param = params.get(idx);
                 cookieName = param.getName();
                 cookieValue = param.getValue();
                 if (cookieValue != null) {
@@ -171,13 +294,19 @@ public class VariantCookie implements Variant {
             }
 
             if (cookieName != null && !cookieName.isEmpty()) {
-                cookieString.append(cookieName);
+            	if (paramStructName != null) {
+            		cookieString.append(paramStructName);
+            		handledCookies.add(paramStructName);
+            	} else {
+            		cookieString.append(cookieName);
+            	}
                 cookieString.append('=');
             }
 
             if (cookieValue != null) {
                 cookieString.append(cookieValue);
             }
+    		System.out.println("SBSB CS " + cookieString.toString()); // TODO
         }
 
         msg.getRequestHeader().setHeader(HttpHeader.COOKIE, null);

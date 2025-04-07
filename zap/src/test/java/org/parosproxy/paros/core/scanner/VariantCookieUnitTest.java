@@ -27,6 +27,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Base64;
 import java.util.List;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
@@ -432,6 +433,70 @@ class VariantCookieUnitTest {
         // Then
         assertThat(injectedCookie, is(nullValue()));
         assertThat(message, hasNoCookieHeaders());
+    }
+    
+    /*
+     * TODO add tests for
+     * 		Raw JSON
+     * 		Raw invalid json
+     * 		Base64 encoded json
+     * 		Base64 encoded non json
+     * 		Multi level
+     * 		Arrays
+     */
+    @Test
+    void shouldExtractStructuredCookieValues() {
+        // Given
+        VariantCookie variantCookie = new VariantCookie();
+        String json = "{'a':'b', 'c':'d'}";
+        String jsonB64 = Base64.getEncoder().encodeToString(json.getBytes());
+        HttpMessage messageWithCookies = createMessageWithCookies(
+        		"raw=" + json + "; enc=" + jsonB64 + ";e=f");
+        // When
+        variantCookie.setMessage(messageWithCookies);
+        // Then
+        assertThat(variantCookie.getParamList().size(), is(equalTo(5)));
+        assertThat(
+                variantCookie.getParamList(),
+                contains(cookie("raw:a", json, 0), cookie("raw:c", json, 1), 
+                		cookie("enc:a", jsonB64, 2), cookie("enc:c", jsonB64, 3)
+                		, cookie("e", "f", 4)));
+    }
+    
+    @Test
+    void shouldSetSimpleUnencodedJsonValue() {
+        // Given
+        VariantCookie variantCookie = new VariantCookie();
+        String json = "{'a':'b', 'c':'d'}";
+        String jsonB64 = Base64.getEncoder().encodeToString(json.getBytes());
+        HttpMessage msg = createMessageWithCookies(
+        		"raw=" + json + "; enc=" + jsonB64 + ";e=f");
+        variantCookie.setMessage(msg);
+        // When
+        variantCookie.setParameter(msg, cookie("raw:c", "d", 1), "raw:c", "DDD");
+        String cookies = msg.getRequestHeader().getHeader(HttpHeader.COOKIE);
+
+        // Then
+        assertThat(cookies, is(equalTo("raw={\"a\":\"b\",\"c\":\"DDD\"}; enc=eydhJzonYicsICdjJzonZCd9; e=f")));
+    }
+
+    @Test
+    void shouldSetSimpleEncodedJsonValue() {
+        // Given
+        VariantCookie variantCookie = new VariantCookie();
+        String json = "{'a':'b', 'c':'d'}";
+        String jsonB64 = Base64.getEncoder().encodeToString(json.getBytes());
+        String updatedJsonB64 = Base64.getEncoder().encodeToString("{\"a\":\"b\",\"c\":\"DDD\"}".getBytes());
+        HttpMessage msg = createMessageWithCookies(
+        		"raw=" + json + "; enc=" + jsonB64 + ";e=f");
+        variantCookie.setMessage(msg);
+
+        // When
+        variantCookie.setParameter(msg, cookie("enc:c", "d", 3), "enc:c", "DDD");
+        String cookies = msg.getRequestHeader().getHeader(HttpHeader.COOKIE);
+
+        // Then
+        assertThat(cookies, is(equalTo("raw={'a':'b', 'c':'d'}; enc=" + updatedJsonB64 + "; e=f")));
     }
 
     private static HttpMessage createMessageWithoutCookies() {
