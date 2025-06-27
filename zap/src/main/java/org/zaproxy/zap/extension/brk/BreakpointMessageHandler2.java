@@ -22,12 +22,14 @@ package org.zaproxy.zap.extension.brk;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.parosproxy.paros.control.Control.Mode;
 import org.zaproxy.zap.extension.httppanel.Message;
 import org.zaproxy.zap.utils.Stats;
-
+import org.zaproxy.annotation.ZapStatsKey;
+ 
 public class BreakpointMessageHandler2 {
 
     private static final Logger LOGGER = LogManager.getLogger(BreakpointMessageHandler2.class);
@@ -69,6 +71,10 @@ public class BreakpointMessageHandler2 {
      * @param onlyIfInScope
      * @return False if message should be dropped.
      */
+    @ZapStatsKey(
+            name = "stats.break.hit",
+            description = "The number of times a break point has been hit",
+            version = "2.11.0")
     public boolean handleMessageReceivedFromClient(Message aMessage, boolean onlyIfInScope) {
         if (!isBreakpoint(aMessage, true, onlyIfInScope)) {
             return true;
@@ -100,6 +106,12 @@ public class BreakpointMessageHandler2 {
      * @param onlyIfInScope
      * @return False if message should be dropped.
      */
+    /*
+    @ZapStatsKey(
+            name = "stats.break.hit",
+            description = "The number of times a break point has been hit",
+            version = "2.11.0")
+            */
     public boolean handleMessageReceivedFromServer(Message aMessage, boolean onlyIfInScope) {
         if (!isBreakpoint(aMessage, false, onlyIfInScope)) {
             return true;

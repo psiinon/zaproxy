@@ -6,6 +6,7 @@ plugins {
 rootProject.name = "zaproxy"
 
 include("zap")
+include("annotations")
 
 rootProject.children.forEach { project -> setUpProject(settingsDir, project) }
 

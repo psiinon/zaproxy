@@ -124,6 +124,9 @@ dependencies {
     // Include annotations used by Log4j2 Core library to avoid compiler warnings.
     compileOnly("biz.aQute.bnd:biz.aQute.bnd.annotation:7.0.0")
     compileOnly("com.google.code.findbugs:findbugs-annotations:3.0.1")
+    // TODO
+    // compileOnly(project(":annotations"))
+    api(project(":annotations"))
     testCompileOnly("biz.aQute.bnd:biz.aQute.bnd.annotation:6.4.1")
     testCompileOnly("com.google.code.findbugs:findbugs-annotations:3.0.1")
 
@@ -146,6 +149,10 @@ tasks.register<JavaExec>("run") {
     mainClass.set("org.zaproxy.zap.ZAP")
     classpath = sourceSets["main"].runtimeClasspath
     workingDir = distDir
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    options.annotationProcessorPath = configurations.compileOnly.get()
 }
 
 listOf("jar", "jarDaily", "jarWithBom").forEach {
