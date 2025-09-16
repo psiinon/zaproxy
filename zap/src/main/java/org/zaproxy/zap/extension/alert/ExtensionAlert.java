@@ -35,6 +35,7 @@ import java.util.TreeSet;
 import java.util.Vector;
 import javax.swing.JTree;
 import javax.swing.tree.TreePath;
+import org.apache.commons.httpclient.URIException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -180,6 +181,14 @@ public class ExtensionAlert extends ExtensionAdaptor
             return;
         }
 
+        if (alert.getMessage() != null) {
+            try {
+                alert.setNodeName(SessionStructure.getNodeName(getModel(), alert.getMessage()));
+            } catch (URIException e) {
+                LOGGER.error(e.getMessage(), e);
+            }
+        }
+
         try {
             int sourceHistoryId = alert.getSourceHistoryId();
             LOGGER.debug("alertFound {} {}", alert.getName(), alert.getUri());
@@ -216,29 +225,49 @@ public class ExtensionAlert extends ExtensionAdaptor
             this.applyOverrides(alert);
 
             writeAlertToDB(alert, ref);
+        } catch (Exception e) {
+            LOGGER.error(e.getMessage(), e);
+        }
+
+        if (!View.isInitialised() || EventQueue.isDispatchThread()) {
+            alertFoundEventHandler(alert, ref);
+        } else {
+            try {
+                final HistoryReference fRef = ref;
+                EventQueue.invokeLater(
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                alertFoundEventHandler(alert, fRef);
+                            }
+                        });
+            } catch (Exception e) {
+                LOGGER.error(e.getMessage(), e);
+            }
+        }
+    }
+
+    private void alertFoundEventHandler(Alert alert, HistoryReference ref) {
+        try {
+
+            synchronized (this.getTreeModel()) {
+                if (this.getTreeModel().addPathEventHandler(alert) != null) {
+                    if (isInFilter(alert)) {
+                        this.getFilteredTreeModel().addPath(alert);
+                    }
+                    if (getView() != null) {
+                        getAlertPanel().expandRoot();
+                        this.recalcAlerts();
+                    }
+                }
+            }
 
             try {
-                if (getView() == null || EventQueue.isDispatchThread()) {
-                    SessionStructure.addPath(Model.getSingleton(), ref, alert.getMessage());
-                } else {
-                    final HistoryReference fRef = ref;
-                    final HttpMessage fMsg = alert.getMessage();
-                    EventQueue.invokeAndWait(
-                            new Runnable() {
-
-                                @Override
-                                public void run() {
-                                    SessionStructure.addPath(Model.getSingleton(), fRef, fMsg);
-                                }
-                            });
-                }
-
+                SessionStructure.addPath(Model.getSingleton(), ref, alert.getMessage());
                 ref.addAlert(alert);
             } catch (Exception e) {
                 LOGGER.error(e.getMessage(), e);
             }
-
-            addAlertToTree(alert);
 
             // Clear the message so that it can be GC'ed
             alert.setMessage(null);
@@ -496,6 +525,10 @@ public class ExtensionAlert extends ExtensionAdaptor
         return filteredTreeModel;
     }
 
+    public String getTextAlertTree() {
+        return TextAlertTree.toString(getTreeModel());
+    }
+
     private void writeAlertToDB(Alert alert, HistoryReference ref)
             throws HttpMalformedHeaderException, DatabaseException {
 
@@ -525,7 +558,8 @@ public class ExtensionAlert extends ExtensionAdaptor
                         alert.getSourceHistoryId(),
                         alert.getSource().getId(),
                         alert.getAlertRef(),
-                        alert.getInputVector());
+                        alert.getInputVector(),
+                        alert.getNodeName());
 
         int alertId = recordAlert.getAlertId();
         alert.setAlertId(alertId);
@@ -544,11 +578,11 @@ public class ExtensionAlert extends ExtensionAdaptor
             updateAlertInDB(alert);
             hRef.updateAlert(alert);
             publishAlertEvent(alert, AlertEventPublisher.ALERT_CHANGED_EVENT);
-            updateAlertInTree(alert, alert);
+            updateAlertInTree(alert);
         }
     }
 
-    private void updateAlertInDB(Alert alert)
+    protected void updateAlertInDB(Alert alert)
             throws HttpMalformedHeaderException, DatabaseException {
 
         TableAlert tableAlert = getModel().getDb().getTableAlert();
@@ -568,7 +602,8 @@ public class ExtensionAlert extends ExtensionAdaptor
                 alert.getCweId(),
                 alert.getWascId(),
                 alert.getSourceHistoryId(),
-                alert.getInputVector());
+                alert.getInputVector(),
+                alert.getNodeName());
 
         int alertId = alert.getAlertId();
         TableAlertTag tableAlertTag = getModel().getDb().getTableAlertTag();
@@ -589,20 +624,25 @@ public class ExtensionAlert extends ExtensionAdaptor
         this.alertPanel.getAlertViewPanel().displayAlert(alert);
     }
 
+    @Deprecated
     public void updateAlertInTree(Alert originalAlert, Alert alert) {
+        this.updateAlertInTree(alert);
+    }
+
+    public void updateAlertInTree(Alert alert) {
         if (Constant.isLowMemoryOptionSet()) {
             return;
         }
 
         if (getView() == null || EventQueue.isDispatchThread()) {
-            updateAlertInTreeEventHandler(originalAlert, alert);
+            updateAlertInTreeEventHandler(alert);
         } else {
             try {
                 EventQueue.invokeAndWait(
                         new Runnable() {
                             @Override
                             public void run() {
-                                updateAlertInTreeEventHandler(originalAlert, alert);
+                                updateAlertInTreeEventHandler(alert);
                             }
                         });
             } catch (Exception e) {
@@ -611,18 +651,21 @@ public class ExtensionAlert extends ExtensionAdaptor
         }
     }
 
-    private void updateAlertInTreeEventHandler(Alert originalAlert, Alert alert) {
-        this.getTreeModel().updatePath(originalAlert, alert);
+    private void updateAlertInTreeEventHandler(Alert alert) {
+        this.getTreeModel().updatePath(alert);
         if (isInFilter(alert)) {
-            this.getFilteredTreeModel().updatePath(originalAlert, alert);
+            this.getFilteredTreeModel().updatePath(alert);
         }
         this.recalcAlerts();
 
         if (hasView()) {
             JTree alertTree = this.getAlertPanel().getTreeAlert();
-            TreePath alertPath = new TreePath(getTreeModel().getAlertNode(alert).getPath());
-            alertTree.setSelectionPath(alertPath);
-            alertTree.scrollPathToVisible(alertPath);
+            AlertNode node = getTreeModel().getAlertNode(alert);
+            if (node != null) {
+                TreePath alertPath = new TreePath(node.getPath());
+                alertTree.setSelectionPath(alertPath);
+                alertTree.scrollPathToVisible(alertPath);
+            }
         }
     }
 
@@ -1041,8 +1084,8 @@ public class ExtensionAlert extends ExtensionAdaptor
     public void sessionScopeChanged(Session session) {
         // Have to recheck all alerts to see if they are in scope
         synchronized (this.getTreeModel()) {
-            ((AlertNode) this.getFilteredTreeModel().getRoot()).removeAllChildren();
-            AlertNode root = (AlertNode) this.getTreeModel().getRoot();
+            (this.getFilteredTreeModel().getRoot()).removeAllChildren();
+            AlertNode root = this.getTreeModel().getRoot();
             filterTree(root);
             this.getFilteredTreeModel().nodeStructureChanged(root);
         }
@@ -1051,8 +1094,8 @@ public class ExtensionAlert extends ExtensionAdaptor
     }
 
     private void filterTree(AlertNode node) {
-        if (node.getUserObject() != null) {
-            Alert alert = node.getUserObject();
+        Alert alert = node.getAlert();
+        if (alert != null) {
             if (this.isInFilter(alert)) {
                 this.getFilteredTreeModel().addPath(alert);
             }

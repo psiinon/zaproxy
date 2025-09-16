@@ -75,6 +75,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.Vector;
 import org.apache.commons.httpclient.URI;
@@ -677,31 +678,34 @@ public class HistoryReference {
         return added;
     }
 
-    public synchronized void updateAlert(Alert alert) {
-        // If there are no alerts yet
+    private Alert getAlert(int alertId) {
         if (alerts == null) {
-            return;
+            return null;
         }
+        Optional<Alert> opt = alerts.stream().filter(a -> a.getAlertId() == alertId).findFirst();
+        if (opt.isPresent()) {
+            return opt.get();
+        }
+        return null;
+    }
 
-        for (Alert a : alerts) {
-            if (a.getAlertId() == alert.getAlertId()) {
-                // Have to use the alertId instead of 'equals' as any of the
-                // other params might have changed
-                this.alerts.remove(a);
-                this.alerts.add(alert);
-                if (this.siteNode != null) {
-                    siteNode.updateAlert(alert);
-                }
-                return;
+    public synchronized void updateAlert(Alert alert) {
+        Alert a = getAlert(alert.getAlertId());
+        if (a != null) {
+            this.alerts.remove(a);
+            this.alerts.add(alert);
+            if (this.siteNode != null) {
+                siteNode.updateAlert(alert);
             }
         }
     }
 
     public synchronized void deleteAlert(Alert alert) {
-        if (alerts != null) {
-            alerts.remove(alert);
+        Alert a = getAlert(alert.getAlertId());
+        if (a != null) {
+            alerts.remove(a);
             if (siteNode != null) {
-                siteNode.deleteAlert(alert);
+                siteNode.deleteAlert(a);
             }
         }
     }
@@ -722,10 +726,7 @@ public class HistoryReference {
      * @see #addAlert(Alert)
      */
     public synchronized boolean hasAlert(Alert alert) {
-        if (alerts == null) {
-            return false;
-        }
-        return alerts.contains(alert);
+        return this.getAlert(alert.getAlertId()) != null;
     }
 
     /**
