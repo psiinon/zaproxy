@@ -144,6 +144,9 @@ public class AlertNode extends DefaultMutableTreeNode {
     @Override
     public String toString() {
         if (this.getChildCount() > 1) {
+        	if (this.alert != null && this.alert.getTags().containsKey("SYSTEMIC")) {
+                return nodeName + " (Systemic)";
+        	}
             return nodeName + " (" + this.getChildCount() + ")";
         }
         return nodeName;

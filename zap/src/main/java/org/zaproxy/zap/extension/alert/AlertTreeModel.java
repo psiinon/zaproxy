@@ -206,6 +206,11 @@ class AlertTreeModel extends DefaultTreeModel {
             // Special case!
             risk = -1;
         }
+        
+        if (alert.getTags().containsKey("SYSTEMIC") && parent.getChildCount() >= 5) {
+        	System.out.println("ATM.addLeaf SYSTEMIC!"); // TODO
+        	return null;
+        }
 
         AlertNode needle = new AlertNode(risk, nodeName);
         needle.setAlert(alert);
