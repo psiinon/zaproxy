@@ -20,7 +20,7 @@ do
 	echo
 	echo "Plan: $file"
 
-    /zap/zap.sh -cmd -autorun /zap/wrk/configs/plans/$file -dev
+    /zap/zap.sh -addoninstall spiderAjax -cmd -autorun /zap/wrk/configs/plans/$file -dev
     RET=$?
     
 	if [ "$RET" != 0 ] 
