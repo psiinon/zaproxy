@@ -134,7 +134,7 @@ public class FindDialog extends AbstractDialog {
         this.setContentPane(getJPanel());
         centreDialog();
         txtFind.requestFocus();
-        this.getRootPane().setDefaultButton(btnFind);
+        this.getRootPane().setDefaultButton(getBtnFind());
         pack();
         this.setVisible(true);
     }

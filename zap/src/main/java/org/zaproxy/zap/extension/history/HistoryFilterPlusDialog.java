@@ -120,12 +120,13 @@ public class HistoryFilterPlusDialog extends AbstractDialog {
     private void initialize() {
         this.setContentPane(getJPanel());
         this.setVisible(false);
+        this.setDefaultCloseOperation(javax.swing.WindowConstants.HIDE_ON_CLOSE);
         this.setTitle(Constant.messages.getString("history.filter.title"));
         if (Model.getSingleton().getOptionsParam().getViewParam().getWmUiHandlingOption() == 0) {
             this.setSize(600, 300);
         }
         centreDialog();
-        this.getRootPane().setDefaultButton(btnApply);
+        this.getRootPane().setDefaultButton(getBtnApply());
         this.pack();
     }
 
@@ -204,7 +205,7 @@ public class HistoryFilterPlusDialog extends AbstractDialog {
                                 filter.setUrlIncPatternList(strToRegexList(regexInc.getText()));
                                 filter.setUrlExcPatternList(strToRegexList(regexExc.getText()));
                                 exitResult = JOptionPane.OK_OPTION;
-                                HistoryFilterPlusDialog.this.dispose();
+                                HistoryFilterPlusDialog.this.setVisible(false);
                             } catch (PatternSyntaxException e1) {
                                 // Invalid regex
                                 View.getSingleton()
@@ -245,7 +246,7 @@ public class HistoryFilterPlusDialog extends AbstractDialog {
                         public void actionPerformed(java.awt.event.ActionEvent e) {
 
                             exitResult = JOptionPane.CANCEL_OPTION;
-                            HistoryFilterPlusDialog.this.dispose();
+                            HistoryFilterPlusDialog.this.setVisible(false);
                         }
                     });
         }
