@@ -19,13 +19,14 @@
  */
 package org.zaproxy.zap.extension.lang;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Enumeration;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -54,37 +55,34 @@ public final class LangImporter {
         int langFileCount = 0;
         String message = "";
 
+        Path installDir = Paths.get(Constant.getZapInstall()).toAbsolutePath().normalize();
+
         File F = new File(languagePack);
         try (ZipFile zipFile = new ZipFile(F.getAbsolutePath())) {
             Enumeration<? extends ZipEntry> enumeration = zipFile.entries();
 
             while (enumeration.hasMoreElements()) {
                 ZipEntry zipEntry = enumeration.nextElement();
+                if (zipEntry.isDirectory()) {
+                    continue;
+                }
 
-                if (!zipEntry.isDirectory()) {
-                    try (BufferedInputStream bis =
-                            new BufferedInputStream(zipFile.getInputStream(zipEntry))) {
+                String name = zipEntry.getName();
+                if (!includedFilesPattern.matcher(name).find()) {
+                    continue;
+                }
 
-                        int size;
-                        byte[] buffer = new byte[2048];
-                        String name = zipEntry.getName();
+                Path outputFile = resolveOutputFile(installDir, name);
+                if (outputFile == null) {
+                    LOGGER.warn(
+                            "Ignoring language pack entry that resolves outside the installation directory: {}",
+                            name);
+                    continue;
+                }
 
-                        if (includedFilesPattern.matcher(name).find()) {
-                            langFileCount++;
-
-                            Path outputFile = Paths.get(Constant.getZapInstall(), name);
-                            try (BufferedOutputStream bos =
-                                    new BufferedOutputStream(
-                                            Files.newOutputStream(outputFile), buffer.length)) {
-
-                                while ((size = bis.read(buffer, 0, buffer.length)) != -1) {
-                                    bos.write(buffer, 0, size);
-                                }
-
-                                bos.flush();
-                            }
-                        }
-                    }
+                langFileCount++;
+                try (InputStream is = zipFile.getInputStream(zipEntry)) {
+                    Files.copy(is, outputFile, StandardCopyOption.REPLACE_EXISTING);
                 }
             }
 
@@ -106,6 +104,28 @@ public final class LangImporter {
         }
 
         return message;
+    }
+
+    /**
+     * Resolves the given zip entry name against the installation directory, rejecting entries that
+     * would be written outside of it (for example, by using {@code ..} path segments).
+     *
+     * @param installDir the absolute and normalised installation directory.
+     * @param entryName the name of the zip entry.
+     * @return the path where the entry should be written, or {@code null} if the entry is not
+     *     contained in the installation directory or is not a valid path.
+     */
+    // Relaxed visibility to allow unit test
+    static Path resolveOutputFile(Path installDir, String entryName) {
+        try {
+            Path outputFile = Paths.get(installDir.toString(), entryName).normalize();
+            if (!outputFile.startsWith(installDir)) {
+                return null;
+            }
+            return outputFile;
+        } catch (InvalidPathException e) {
+            return null;
+        }
     }
 
     /**
